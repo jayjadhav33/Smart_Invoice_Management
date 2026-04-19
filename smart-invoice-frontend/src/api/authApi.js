@@ -1,0 +1,7 @@
+import axiosInstance from './axiosConfig';
+
+export const registerUser = (data) =>
+  axiosInstance.post('/api/auth/register', data);
+
+export const loginUser = (data) =>
+  axiosInstance.post('/api/auth/login', data);
