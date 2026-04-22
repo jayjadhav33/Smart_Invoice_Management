@@ -5,6 +5,35 @@ import { toast } from 'react-toastify';
 
 const empty = { name: '', email: '', phone: '', address: '', gstNumber: '' };
 
+// ── Validation Rules ─────────────────────────
+const PHONE_REGEX = /^[6-9]\d{9}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GST_REGEX   = /^[0-9A-Z]{15}$/;
+
+const validate = (form) => {
+  if (!form.name.trim() || form.name.trim().length < 2)
+    return 'Name must be at least 2 characters';
+
+  if (!form.email.trim())
+    return 'Email is required';
+  if (!EMAIL_REGEX.test(form.email.trim()))
+    return 'Please enter a valid email address';
+
+  if (!form.phone.trim())
+    return 'Phone number is required';
+  if (form.phone.trim().length !== 10)
+    return 'Phone number must be exactly 10 digits';
+  if (!PHONE_REGEX.test(form.phone.trim()))
+    return 'Phone must start with 6, 7, 8 or 9 and be 10 digits';
+
+  if (form.gstNumber && form.gstNumber.trim()) {
+    if (!GST_REGEX.test(form.gstNumber.trim().toUpperCase()))
+      return 'GST number must be exactly 15 alphanumeric characters';
+  }
+
+  return null; // null means no error
+};
+
 const Clients = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,17 +52,61 @@ const Clients = () => {
   };
 
   const openAdd  = () => { setForm(empty); setEdit(null); setModal(true); };
-  const openEdit = c => { setForm({ name: c.name, email: c.email, phone: c.phone || '', address: c.address || '', gstNumber: c.gstNumber || '' }); setEdit(c.id); setModal(true); };
-  const handle   = e => setForm({ ...form, [e.target.name]: e.target.value });
+  const openEdit = c => {
+    setForm({
+      name:      c.name,
+      email:     c.email,
+      phone:     c.phone      || '',
+      address:   c.address    || '',
+      gstNumber: c.gstNumber  || ''
+    });
+    setEdit(c.id);
+    setModal(true);
+  };
+
+  // ── Phone input: digits only, max 10 ────────
+  const handle = e => {
+    const { name, value } = e.target;
+    if (name === 'phone') {
+      // Strip non-digits, limit to 10
+      const digits = value.replace(/\D/g, '').slice(0, 10);
+      setForm({ ...form, phone: digits });
+    } else {
+      setForm({ ...form, [name]: value });
+    }
+  };
 
   const submit = async e => {
-    e.preventDefault(); setBusy(true);
+    e.preventDefault();
+
+    // ── Run validation before API call ──────────
+    const error = validate(form);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    setBusy(true);
     try {
-      edit ? await updateClient(edit, form) : await createClient(form);
+      const payload = {
+        ...form,
+        email:     form.email.trim(),
+        phone:     form.phone.trim(),
+        name:      form.name.trim(),
+        gstNumber: form.gstNumber.trim().toUpperCase()
+      };
+      edit
+        ? await updateClient(edit, payload)
+        : await createClient(payload);
       toast.success(edit ? 'Client updated!' : 'Client added!');
-      setModal(false); load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-    finally { setBusy(false); }
+      setModal(false);
+      load();
+    } catch (err) {
+      // Show backend error message (duplicate email/phone etc.)
+      toast.error(err.response?.data?.message || 'Operation failed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const del = async (id, name) => {
@@ -114,31 +187,102 @@ const Clients = () => {
                   <div className="form-row">
                     <div className="form-group">
                       <label>Full Name *</label>
-                      <input className="form-control" name="name" value={form.name} onChange={handle} placeholder="Client or company name" required />
+                      <input
+                        className="form-control"
+                        name="name"
+                        value={form.name}
+                        onChange={handle}
+                        placeholder="Client or company name"
+                        required
+                      />
                     </div>
                     <div className="form-group">
                       <label>Email *</label>
-                      <input className="form-control" type="email" name="email" value={form.email} onChange={handle} placeholder="client@email.com" required />
+                      <input
+                        className="form-control"
+                        type="email"
+                        name="email"
+                        value={form.email}
+                        onChange={handle}
+                        placeholder="client@email.com"
+                        required
+                      />
                     </div>
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Phone</label>
-                      <input className="form-control" name="phone" value={form.phone} onChange={handle} placeholder="+91 98765 43210" />
+                      <label>Phone * <span style={{fontSize:'11px',color:'#9ca3af',fontWeight:'400'}}>(10 digits, starts with 6-9)</span></label>
+                      <input
+                        className="form-control"
+                        name="phone"
+                        value={form.phone}
+                        onChange={handle}
+                        placeholder="e.g. 9876543210"
+                        inputMode="numeric"
+                        maxLength="10"
+                        required
+                      />
+                      {/* Live digit counter */}
+                      <small style={{
+                        display: 'block',
+                        marginTop: '3px',
+                        fontSize: '11px',
+                        color: form.phone.length === 10
+                          ? '#16a34a'
+                          : form.phone.length > 0
+                          ? '#dc2626'
+                          : '#9ca3af'
+                      }}>
+                        {form.phone.length}/10 digits
+                        {form.phone.length === 10 && ' ✓'}
+                      </small>
                     </div>
                     <div className="form-group">
-                      <label>GST Number</label>
-                      <input className="form-control" name="gstNumber" value={form.gstNumber} onChange={handle} placeholder="27AAPFU0939F1ZV" />
+                      <label>GST Number <span style={{fontSize:'11px',color:'#9ca3af',fontWeight:'400'}}>(15 chars, optional)</span></label>
+                      <input
+                        className="form-control"
+                        name="gstNumber"
+                        value={form.gstNumber}
+                        onChange={e => setForm({
+                          ...form,
+                          gstNumber: e.target.value.toUpperCase()
+                        })}
+                        placeholder="27AAPFU0939F1ZV"
+                        maxLength="15"
+                      />
+                      {/* Live GST counter */}
+                      {form.gstNumber.length > 0 && (
+                        <small style={{
+                          display: 'block',
+                          marginTop: '3px',
+                          fontSize: '11px',
+                          color: form.gstNumber.length === 15
+                            ? '#16a34a' : '#dc2626'
+                        }}>
+                          {form.gstNumber.length}/15
+                          {form.gstNumber.length === 15 && ' ✓'}
+                        </small>
+                      )}
                     </div>
                   </div>
                   <div className="form-group">
                     <label>Address</label>
-                    <textarea className="form-control" name="address" value={form.address} onChange={handle} placeholder="Full address" rows="2" style={{ resize: 'vertical' }} />
+                    <textarea
+                      className="form-control"
+                      name="address"
+                      value={form.address}
+                      onChange={handle}
+                      placeholder="Full address"
+                      rows="2"
+                      style={{ resize: 'vertical' }}
+                    />
                   </div>
                 </div>
                 <div className="modal-footer">
                   <button type="button" className="btn btn-ghost" onClick={() => setModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving...' : edit ? 'Update Client' : 'Add Client'}</button>
+                  <button type="submit" className="btn btn-primary" disabled={busy}>
+                    {busy ? 'Saving...' : edit ? 'Update Client' : 'Add Client'}
+                  </button>
                 </div>
               </form>
             </div>
